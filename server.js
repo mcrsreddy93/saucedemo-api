@@ -9,21 +9,18 @@ app.use(cors());
 app.use(express.json());
 
 // ========================================
-// USERS & AUTH
+// GLOBAL STATE
 // ========================================
-const users = [
+let users = [
     { username: 'standard_user', password: 'secret_sauce', type: 'standard', role: 'user' },
     { username: 'locked_out_user', password: 'secret_sauce', type: 'locked', role: 'user' },
     { username: 'problem_user', password: 'secret_sauce', type: 'problem', role: 'user' },
     { username: 'performance_glitch_user', password: 'secret_sauce', type: 'performance', role: 'user' },
     { username: 'visual_user', password: 'secret_sauce', type: 'visual', role: 'user' },
     { username: 'error_user', password: 'secret_sauce', type: 'error', role: 'user' },
-    { username: 'admin', password: 'admin123', role: 'admin' }, // ADMIN
+    { username: 'admin', password: 'admin123', role: 'admin' },
 ];
 
-// ========================================
-// DYNAMIC INVENTORY & STOCK
-// ========================================
 let inventory = [
     { id: 0, name: 'Sauce Labs Bike Light', price: 9.99, img: 'bike-light-1200x1500.jpg' },
     { id: 1, name: 'Sauce Labs Bolt T-Shirt', price: 15.99, img: 'bolt-shirt-1200x1500.jpg' },
@@ -35,7 +32,7 @@ let inventory = [
 
 let nextProductId = 6;
 const MAX_STOCK = 10;
-const stock = new Map(); // productId → quantity
+const stock = new Map();
 inventory.forEach(p => stock.set(p.id, MAX_STOCK));
 
 const sessions = new Map();     // token → session
@@ -48,7 +45,8 @@ const validCoupons = { SAVE20: 0.20, TEST50: 0.50 };
 const getSession = (req) => {
     const auth = req.headers.authorization;
     if (!auth?.startsWith('Bearer ')) return null;
-    return sessions.get(auth.split(' ')[1]) || null;
+    const token = auth.split(' ')[1];
+    return sessions.get(token) || null;
 };
 
 const requireAuth = (req, res, next) => {
@@ -69,7 +67,13 @@ const calculateCartDetails = (cart, coupon = null) => {
     const items = cart.map(i => {
         const p = inventory.find(x => x.id === i.productId);
         if (!p) return null;
-        return { productId: p.id, name: p.name, price: p.price, quantity: i.quantity, lineTotal: +(p.price * i.quantity).toFixed(2) };
+        return {
+            productId: p.id,
+            name: p.name,
+            price: p.price,
+            quantity: i.quantity,
+            lineTotal: +(p.price * i.quantity).toFixed(2)
+        };
     }).filter(Boolean);
 
     const itemTotal = +items.reduce((s, i) => s + i.lineTotal, 0).toFixed(2);
@@ -85,7 +89,11 @@ const calculateCartDetails = (cart, coupon = null) => {
 // PUBLIC ROUTES
 // ========================================
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', version: '7.0 ULTIMATE', features: ['admin-crud-products', 'stock', 'coupons', 'order-history'] });
+    res.json({
+        status: 'ok',
+        version: '9.0 ULTIMATE FINAL',
+        features: ['self-service-profile', 'admin-full-control', 'product-crud', 'stock', 'coupons']
+    });
 });
 
 app.post('/api/login', async (req, res) => {
@@ -111,10 +119,52 @@ app.post('/api/login', async (req, res) => {
 
 app.post('/api/logout', requireAuth, (req, res) => {
     sessions.delete(req.headers.authorization.split(' ')[1]);
-    res.json({ message: 'Logged out' });
+    res.json({ message: 'Logged out successfully' });
 });
 
+// ========================================
+// USER SELF-SERVICE: /me
+// ========================================
+app.get('/api/me', requireAuth, (req, res) => {
+    const user = users.find(u => u.username === req.session.username);
+    res.json({
+        username: user.username,
+        role: user.role,
+        type: user.type || 'standard',
+        locked: user.type === 'locked'
+    });
+});
+
+app.patch('/api/me', requireAuth, (req, res) => {
+    const { password } = req.body;
+    if (!password || password.length < 4) {
+        return res.status(400).json({ error: 'Password must be at least 4 characters' });
+    }
+    const user = users.find(u => u.username === req.session.username);
+    user.password = password;
+    res.json({ message: 'Password updated successfully' });
+});
+
+app.delete('/api/me', requireAuth, (req, res) => {
+    if (req.session.username === 'admin') {
+        return res.status(403).json({ error: 'Admin cannot delete their own account' });
+    }
+
+    const idx = users.findIndex(u => u.username === req.session.username);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    // Kill all sessions
+    for (const [token, s] of sessions.entries()) {
+        if (s.username === req.session.username) sessions.delete(token);
+    }
+
+    users.splice(idx, 1);
+    res.json({ message: 'Your account has been permanently deleted' });
+});
+
+// ========================================
 // INVENTORY
+// ========================================
 app.get('/api/inventory', async (req, res) => {
     const session = getSession(req);
     if (session?.type === 'performance') await new Promise(r => setTimeout(r, 3000));
@@ -147,7 +197,7 @@ app.get('/api/inventory/:id', (req, res) => {
 });
 
 // ========================================
-// CART
+// CART & CHECKOUT
 // ========================================
 app.get('/api/cart', requireAuth, (req, res) =>
     res.json(calculateCartDetails(req.session.cart, req.session.appliedCoupon))
@@ -165,7 +215,7 @@ app.post('/api/cart', requireAuth, (req, res) => {
     const available = stock.get(id) || 0;
     const current = req.session.cart.find(i => i.productId === id)?.quantity || 0;
     if (current + qty > available) return res.status(400).json({ error: 'Not enough stock', available });
-    if (current + qty > 10) return res.status(400).json({ error: 'Max 10 per item' });
+    if (current + qty > 10) return res.status(400).json({ error: 'Maximum 10 per item' });
 
     const existing = req.session.cart.find(i => i.productId === id);
     if (existing) existing.quantity += qty;
@@ -178,10 +228,10 @@ app.patch('/api/cart/:productId', requireAuth, (req, res) => {
     const id = Number(req.params.productId);
     const { quantity } = req.body;
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10)
-        return res.status(400).json({ error: 'Quantity 1–10' });
+        return res.status(400).json({ error: 'Quantity must be 1–10' });
 
     const item = req.session.cart.find(i => i.productId === id);
-    if (!item) return res.status(404).json({ error: 'Not in cart' });
+    if (!item) return res.status(404).json({ error: 'Item not in cart' });
     if (quantity > (stock.get(id) || 0)) return res.status(400).json({ error: 'Not enough stock' });
 
     item.quantity = quantity;
@@ -213,7 +263,7 @@ app.post('/api/cart/coupon', requireAuth, (req, res) => {
     const { code } = req.body;
     if (!validCoupons[code]) {
         req.session.appliedCoupon = null;
-        return res.status(400).json({ error: 'Invalid coupon' });
+        return res.status(400).json({ error: 'Invalid coupon code' });
     }
     req.session.appliedCoupon = code;
     res.json({ message: 'Coupon applied', ...calculateCartDetails(req.session.cart, code) });
@@ -224,17 +274,16 @@ app.delete('/api/cart/coupon', requireAuth, (req, res) => {
     res.json(calculateCartDetails(req.session.cart));
 });
 
-// CHECKOUT
 app.post('/api/checkout', requireAuth, async (req, res) => {
     const { firstName, lastName, postalCode } = req.body;
     if (!firstName || !lastName || !postalCode) return res.status(400).json({ error: 'All fields required' });
-    if (!req.session.cart.length) return res.status(400).json({ error: 'Cart empty' });
+    if (!req.session.cart.length) return res.status(400).json({ error: 'Cart is empty' });
+
     if (req.session.type === 'error') {
         await new Promise(r => setTimeout(r, 2000));
         return res.status(500).json({ error: 'Checkout failed (error_user)' });
     }
 
-    // Deduct stock
     for (const item of req.session.cart) {
         stock.set(item.productId, stock.get(item.productId) - item.quantity);
     }
@@ -263,18 +312,58 @@ app.post('/api/reset', requireAuth, (req, res) => {
 });
 
 // ========================================
-// ADMIN ROUTES
+// ADMIN: USER MANAGEMENT
 // ========================================
-// Create product
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+    const safe = users.map(u => ({
+        username: u.username,
+        role: u.role,
+        type: u.type || 'standard',
+        locked: u.type === 'locked'
+    }));
+    res.json({ total: safe.length, users: safe });
+});
+
+app.post('/api/admin/users', requireAdmin, (req, res) => {
+    const { username, password, role = 'user', type = 'standard' } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+    if (users.some(u => u.username === username)) return res.status(409).json({ error: 'Username already exists' });
+
+    users.push({ username, password, role, type: role === 'user' ? type : undefined });
+    res.status(201).json({ message: 'User created', username });
+});
+
+app.patch('/api/admin/users/:username', requireAdmin, (req, res) => {
+    const target = users.find(u => u.username === req.params.username);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.username === 'admin') return res.status(403).json({ error: 'Cannot modify admin' });
+
+    const { password, role, type } = req.body;
+    if (password) target.password = password;
+    if (role && ['user', 'admin'].includes(role)) target.role = role;
+    if (type) target.type = type;
+
+    res.json({ message: 'User updated', username: target.username });
+});
+
+app.delete('/api/admin/users/:username', requireAdmin, (req, res) => {
+    if (req.params.username === 'admin') return res.status(403).json({ error: 'Cannot delete admin' });
+    const idx = users.findIndex(u => u.username === req.params.username);
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+
+    for (const [token, s] of sessions.entries()) {
+        if (s.username === req.params.username) sessions.delete(token);
+    }
+    users.splice(idx, 1);
+    res.json({ message: 'User deleted', username: req.params.username });
+});
+
+// ========================================
+// ADMIN: PRODUCT MANAGEMENT
+// ========================================
 app.post('/api/admin/products', requireAdmin, (req, res) => {
     const { name, price, img, initialStock = 10 } = req.body;
-
-    if (!name || typeof name !== 'string' || name.trim().length < 3)
-        return res.status(400).json({ error: 'Valid name required' });
-    if (!price || isNaN(price) || price <= 0)
-        return res.status(400).json({ error: 'Valid price required' });
-    if (!img || typeof img !== 'string')
-        return res.status(400).json({ error: 'Image filename required' });
+    if (!name || !price || !img) return res.status(400).json({ error: 'name, price, img required' });
 
     const newProduct = {
         id: nextProductId++,
@@ -288,27 +377,23 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
 
     res.status(201).json({
         message: 'Product created',
-        product: { id: newProduct.id, name: newProduct.name, price: newProduct.price, imageUrl: `https://www.saucedemo.com/img/${newProduct.img}` }
+        product: { id: newProduct.id, name: newProduct.name, price: newProduct.price }
     });
 });
 
-// Delete product
 app.delete('/api/admin/products/:productId', requireAdmin, (req, res) => {
     const id = Number(req.params.productId);
     const idx = inventory.findIndex(p => p.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Product not found' });
 
-    // Safety: don't delete if in any cart
     const inUse = Array.from(sessions.values()).some(s => s.cart.some(i => i.productId === id));
-    if (inUse) return res.status(409).json({ error: 'Product is in one or more carts – cannot delete' });
+    if (inUse) return res.status(409).json({ error: 'Product in cart – cannot delete' });
 
     const deleted = inventory.splice(idx, 1)[0];
     stock.delete(id);
-
     res.json({ message: 'Product deleted', deletedProduct: { id: deleted.id, name: deleted.name } });
 });
 
-// Stock management
 app.get('/api/admin/stock', requireAdmin, (req, res) => {
     res.json(inventory.map(p => ({
         id: p.id,
@@ -326,18 +411,15 @@ app.patch('/api/admin/stock/:productId', requireAdmin, (req, res) => {
     res.json({ message: 'Stock updated', productId: id, newStock: quantity });
 });
 
-app.get('/api/admin/orders', requireAdmin, (req, res) => {
-    res.json({ total: orderHistory.length, recent: orderHistory.slice(-20) });
-});
-
 // ========================================
 // 404 & START
 // ========================================
 app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 
 app.listen(PORT, () => {
-    console.log('\nSAUCDEMO API MOCK v7.0 — FULLY COMPLETE');
-    console.log(`http://localhost:${PORT}`);
-    console.log('Admin login: admin / admin123');
-    console.log('Admin can CREATE and DELETE products!\n');
+    console.log('\nSAUCDEMO API MOCK v9.0 — THE FINAL ULTIMATE VERSION');
+    console.log(`Server running at http://localhost:${PORT}`);
+    console.log('Users can manage their own profile: GET/PATCH/DELETE /api/me');
+    console.log('Admin has full control over users and products');
+    console.log('Login as: admin / admin123\n');
 });
