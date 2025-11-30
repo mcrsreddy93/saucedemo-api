@@ -431,6 +431,15 @@ app.post('/api/checkout', requireAuth, async (req, res) => {
     res.status(201).json(order);
 });
 
+app.get('/api/orders', requireAuth, (req, res) => {
+    const userOrders = orderHistory
+        .filter(o => o.username === req.user.username)
+        .map(({ orderId, total, timestamp, items }) => ({
+            orderId, total, timestamp, itemCount: items.length
+        }));
+    res.json(userOrders);
+});
+
 app.post('/api/reset', requireAuth, (req, res) => {
     userCarts.set(req.user.username, { cart: [], appliedCoupon: null });
     res.json({ message: 'App state reset' });
