@@ -1,0 +1,295 @@
+{
+  "info": {
+    "name": "SauceDemo API Replica - Full Test Suite",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Login - Standard User (Success)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Login successful', function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(pm.response.json().success).to.be.true;",
+              "});",
+              "",
+              "// Extract session cookie",
+              "const cookies = pm.response.headers.get('set-cookie');",
+              "if (cookies) {",
+              "    const sessionCookie = cookies.find(c => c.includes('session_id'));",
+              "    if (sessionCookie) {",
+              "        const sessionId = sessionCookie.split(';')[0].split('=')[1];",
+              "        pm.environment.set('session_id', sessionId);",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"standard_user\",\n    \"password\": \"secret_sauce\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/login",
+          "host": ["{{base_url}}"],
+          "path": ["login"]
+        }
+      }
+    },
+    {
+      "name": "2. Login - Locked Out User (Should Fail)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"username\": \"locked_out_user\",\n    \"password\": \"secret_sauce\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/login",
+          "host": ["{{base_url}}"],
+          "path": ["login"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Locked out user denied', function () {",
+              "    pm.response.to.have.status(401);",
+              "    pm.expect(pm.response.json().error).to.include('locked out');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Get Inventory (No Auth Needed)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/inventory",
+          "host": ["{{base_url}}"],
+          "path": ["inventory"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Inventory returns 6 products', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const json = pm.response.json();",
+              "    pm.expect(json.items).to.be.an('array');",
+              "    pm.expect(json.items.length).to.eql(6);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Add Item to Cart",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"id\": 4\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/cart/add",
+          "host": ["{{base_url}}"],
+          "path": ["cart", "add"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Item added to cart', function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(pm.response.json().success).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Add Another Item",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"id\": 1\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/cart/add",
+          "host": ["{{base_url}}"],
+          "path": ["cart", "add"]
+        }
+      }
+    },
+    {
+      "name": "6. View Cart",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/cart",
+          "host": ["{{base_url}}"],
+          "path": ["cart"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Cart has 2 items', function () {",
+              "    pm.response.to.have.status(200);",
+              "    const items = pm.response.json().items;",
+              "    pm.expect(items.length).to.eql(2);",
+              "    pm.expect(items[0].name).to.include('Backpack');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Remove Item from Cart",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"id\": 4\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/cart/remove",
+          "host": ["{{base_url}}"],
+          "path": ["cart", "remove"]
+        }
+      }
+    },
+    {
+      "name": "8. Checkout (Success)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/checkout",
+          "host": ["{{base_url}}"],
+          "path": ["checkout"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Checkout successful', function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(pm.response.json().success).to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "9. Cart Should Be Empty After Checkout",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/cart",
+          "host": ["{{base_url}}"],
+          "path": ["cart"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Cart is empty after checkout', function () {",
+              "    const items = pm.response.json().items;",
+              "    pm.expect(items.length).to.eql(0);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "10. Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Cookie", "value": "session_id={{session_id}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/logout",
+          "host": ["{{base_url}}"],
+          "path": ["logout"]
+        }
+      },
+      "response": [],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Logout successful', function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.environment.unset('session_id');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
