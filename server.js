@@ -91,11 +91,33 @@ const calculateCartDetails = (cart, coupon = null) => {
 app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
-        version: '9.0 ULTIMATE FINAL',
-        features: ['self-service-profile', 'admin-full-control', 'product-crud', 'stock', 'coupons']
+        version: '10.0 ULTIMATE FINAL',
+        features: ['registration', 'self-service-profile', 'admin-full-control', 'product-crud', 'stock', 'coupons']
     });
 });
 
+// PUBLIC REGISTRATION
+app.post('/api/register', (req, res) => {
+    const { username, password } = req.body || {};
+
+    if (!username || !password)
+        return res.status(400).json({ error: 'username and password are required' });
+    if (username.length < 3 || password.length < 5)
+        return res.status(400).json({ error: 'username ≥ 3 chars, password ≥ 5 chars' });
+    if (users.some(u => u.username === username))
+        return res.status(409).json({ error: 'Username already taken' });
+
+    users.push({
+        username,
+        password,
+        type: 'standard',
+        role: 'user'
+    });
+
+    res.status(201).json({ message: 'Registration successful! You can now log in.', username });
+});
+
+// LOGIN
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body || {};
     const user = users.find(u => u.username === username && u.password === password);
@@ -106,7 +128,7 @@ app.post('/api/login', async (req, res) => {
     const token = randomUUID();
     sessions.set(token, {
         username: user.username,
-        role: user.role || 'user',
+        role: user.role,
         type: user.type || 'standard',
         cart: [],
         appliedCoupon: null,
@@ -114,7 +136,7 @@ app.post('/api/login', async (req, res) => {
         loggedInAt: new Date().toISOString()
     });
 
-    res.json({ token, user: { username, role: user.role || 'user' } });
+    res.json({ token, user: { username, role: user.role } });
 });
 
 app.post('/api/logout', requireAuth, (req, res) => {
@@ -137,23 +159,21 @@ app.get('/api/me', requireAuth, (req, res) => {
 
 app.patch('/api/me', requireAuth, (req, res) => {
     const { password } = req.body;
-    if (!password || password.length < 4) {
-        return res.status(400).json({ error: 'Password must be at least 4 characters' });
-    }
+    if (!password || password.length < 5)
+        return res.status(400).json({ error: 'Password must be at least 5 characters' });
+
     const user = users.find(u => u.username === req.session.username);
     user.password = password;
     res.json({ message: 'Password updated successfully' });
 });
 
 app.delete('/api/me', requireAuth, (req, res) => {
-    if (req.session.username === 'admin') {
+    if (req.session.username === 'admin')
         return res.status(403).json({ error: 'Admin cannot delete their own account' });
-    }
 
     const idx = users.findIndex(u => u.username === req.session.username);
     if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
-    // Kill all sessions
     for (const [token, s] of sessions.entries()) {
         if (s.username === req.session.username) sessions.delete(token);
     }
@@ -330,7 +350,7 @@ app.post('/api/admin/users', requireAdmin, (req, res) => {
     if (users.some(u => u.username === username)) return res.status(409).json({ error: 'Username already exists' });
 
     users.push({ username, password, role, type: role === 'user' ? type : undefined });
-    res.status(201).json({ message: 'User created', username });
+    res.status(201).json({ message: 'User created by admin', username });
 });
 
 app.patch('/api/admin/users/:username', requireAdmin, (req, res) => {
@@ -417,9 +437,11 @@ app.patch('/api/admin/stock/:productId', requireAdmin, (req, res) => {
 app.use('/api', (req, res) => res.status(404).json({ error: 'Route not found' }));
 
 app.listen(PORT, () => {
-    console.log('\nSAUCDEMO API MOCK v9.0 — THE FINAL ULTIMATE VERSION');
+    console.log('\nSAUCDEMO API MOCK v10.0 — THE TRUE FINAL VERSION');
     console.log(`Server running at http://localhost:${PORT}`);
-    console.log('Users can manage their own profile: GET/PATCH/DELETE /api/me');
-    console.log('Admin has full control over users and products');
-    console.log('Login as: admin / admin123\n');
+    console.log('Features:');
+    console.log('  POST   /api/register           → Public registration');
+    console.log('  GET/PATCH/DELETE /api/me       → Self-service profile');
+    console.log('  Admin has full control over users & products');
+    console.log('  All SauceDemo user types + visual bugs + stock + coupons\n');
 });
