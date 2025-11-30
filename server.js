@@ -13,101 +13,58 @@ app.use(express.json());
 // Fake "database"
 // ----------------------
 
-// Users similar to SauceDemo
 const users = [
     { username: 'standard_user', password: 'secret_sauce', type: 'standard' },
     { username: 'locked_out_user', password: 'secret_sauce', type: 'locked' },
     { username: 'problem_user', password: 'secret_sauce', type: 'problem' },
     { username: 'performance_glitch_user', password: 'secret_sauce', type: 'performance' },
+    { username: 'error_user', password: 'secret_sauce', type: 'error' }, // extra for fun
+    { username: 'visual_user', password: 'secret_sauce', type: 'visual' }, // extra for visual bugs
 ];
 
-// Inventory (6 items like SauceDemo, prices approximate)
 const inventory = [
-    {
-        id: 0,
-        name: 'Sauce Labs Bike Light',
-        description: 'A red bike light that shines as bright as your test reports.',
-        price: 9.99,
-        imageUrl: 'https://www.saucedemo.com/img/bike-light-1200x1500.jpg',
-    },
-    {
-        id: 1,
-        name: 'Sauce Labs Bolt T-Shirt',
-        description: 'Get supercharged with this bolt t-shirt.',
-        price: 15.99,
-        imageUrl: 'https://www.saucedemo.com/img/bolt-shirt-1200x1500.jpg',
-    },
-    {
-        id: 2,
-        name: 'Sauce Labs Onesie',
-        description: 'Rib snap infant onesie for the junior automation engineer.',
-        price: 7.99,
-        imageUrl: 'https://www.saucedemo.com/img/onesie-1200x1500.jpg',
-    },
-    {
-        id: 3,
-        name: 'Test.allTheThings() T-Shirt (Red)',
-        description: 'This classic tee will make you feel like a superhero tester.',
-        price: 15.99,
-        imageUrl: 'https://www.saucedemo.com/img/red-tatt-1200x1500.jpg',
-    },
-    {
-        id: 4,
-        name: 'Sauce Labs Backpack',
-        description: 'Carry all your testing gear in style.',
-        price: 29.99,
-        imageUrl: 'https://www.saucedemo.com/img/sauce-backpack-1200x1500.jpg',
-    },
-    {
-        id: 5,
-        name: 'Sauce Labs Fleece Jacket',
-        description: 'Keep warm while your tests run in the cloud.',
-        price: 49.99,
-        imageUrl: 'https://www.saucedemo.com/img/sauce-pullover-1200x1500.jpg',
-    },
+    { id: 0, name: 'Sauce Labs Bike Light', desc: 'A red bike light...', price: 9.99, img: 'bike-light-1200x1500.jpg' },
+    { id: 1, name: 'Sauce Labs Bolt T-Shirt', desc: 'Get supercharged...', price: 15.99, img: 'bolt-shirt-1200x1500.jpg' },
+    { id: 2, name: 'Sauce Labs Onesie', desc: 'Rib snap infant onesie...', price: 7.99, img: 'onesie-1200x1500.jpg' },
+    { id: 3, name: 'Test.allTheThings() T-Shirt (Red)', desc: 'This classic tee...', price: 15.99, img: 'red-tatt-1200x1500.jpg' },
+    { id: 4, name: 'Sauce Labs Backpack', desc: 'Carry all your testing gear...', price: 29.99, img: 'sauce-backpack-1200x1500.jpg' },
+    { id: 5, name: 'Sauce Labs Fleece Jacket', desc: 'Keep warm while your tests...', price: 49.99, img: 'sauce-pullover-1200x1500.jpg' },
 ];
 
-// Session storage: token -> { username, cart: [{ productId, quantity }], lastCheckout }
+// Session storage: token → session object
 const sessions = new Map();
 
 // ----------------------
-// Helper functions
+// Helpers
 // ----------------------
 
 function findUser(username, password) {
-    return users.find(
-        (u) => u.username === username && u.password === password
-    );
+    return users.find(u => u.username === username && u.password === password);
 }
 
 function getSessionFromRequest(req) {
-    const authHeader = req.headers['authorization'];
-    if (!authHeader) return null;
-
-    const parts = authHeader.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer') return null;
-
-    const token = parts[1];
+    const auth = req.headers['authorization'];
+    if (!auth?.startsWith('Bearer ')) return null;
+    const token = auth.split(' ')[1];
     return sessions.get(token) || null;
 }
 
 function calculateCartDetails(cart) {
-    const items = cart.map((item) => {
-        const product = inventory.find((p) => p.id === item.productId);
+    const items = cart.map(item => {
+        const product = inventory.find(p => p.id === item.productId);
         if (!product) return null;
-
-        const lineTotal = product.price * item.quantity;
+        const lineTotal = +(product.price * item.quantity).toFixed(2);
         return {
             productId: product.id,
             name: product.name,
             price: product.price,
             quantity: item.quantity,
-            lineTotal: +lineTotal.toFixed(2),
+            lineTotal,
         };
     }).filter(Boolean);
 
-    const itemTotal = +items.reduce((sum, it) => sum + it.lineTotal, 0).toFixed(2);
-    const tax = +(itemTotal * 0.08).toFixed(2); // 8% tax
+    const itemTotal = +items.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2);
+    const tax = +(itemTotal * 0.08).toFixed(2);
     const total = +(itemTotal + tax).toFixed(2);
 
     return { items, itemTotal, tax, total };
@@ -116,9 +73,7 @@ function calculateCartDetails(cart) {
 // Auth middleware
 function requireAuth(req, res, next) {
     const session = getSessionFromRequest(req);
-    if (!session) {
-        return res.status(401).json({ error: 'Unauthorized: missing or invalid token' });
-    }
+    if (!session) return res.status(401).json({ error: 'Unauthorized' });
     req.session = session;
     next();
 }
@@ -127,9 +82,8 @@ function requireAuth(req, res, next) {
 // Routes
 // ----------------------
 
-// Healthcheck
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', message: 'SauceDemo-like API running' });
+    res.json({ status: 'ok', message: 'SauceDemo API Mock v2 – Ready for testing!' });
 });
 
 // Login
@@ -137,179 +91,180 @@ app.post('/api/login', async (req, res) => {
     const { username, password } = req.body || {};
 
     if (!username || !password) {
-        return res.status(400).json({ error: 'username and password are required' });
+        return res.status(400).json({ error: 'username and password required' });
     }
 
     const user = findUser(username, password);
     if (!user) {
-        return res.status(401).json({ error: 'Username and password do not match any user in this service' });
+        return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // locked_out_user behaviour
     if (user.type === 'locked') {
         return res.status(403).json({ error: 'Sorry, this user has been locked out.' });
     }
 
-    // performance_glitch_user behaviour – artificial delay
+    // Performance glitch delay on login
     if (user.type === 'performance') {
-        await new Promise((resolve) => setTimeout(resolve, 2000)); // 2s delay
+        await new Promise(r => setTimeout(r, 2500));
     }
 
     const token = randomUUID();
-    const session = {
+    sessions.set(token, {
         username: user.username,
         type: user.type,
-        cart: [],
+        cart: [],           // Always fresh cart on login (real behavior)
         lastCheckout: null,
-    };
-    sessions.set(token, session);
-
-    res.json({
-        token,
-        user: {
-            username: user.username,
-            type: user.type,
-        },
     });
+
+    res.json({ token, user: { username: user.username, type: user.type } });
 });
 
-// Inventory list with sorting
-app.get('/api/inventory', (req, res) => {
-    const { sort } = req.query;
-    let items = [...inventory];
+// Logout
+app.post('/api/logout', requireAuth, (req, res) => {
+    const token = req.headers.authorization.split(' ')[1];
+    sessions.delete(token);
+    res.json({ message: 'Logged out' });
+});
 
-    if (sort === 'az') {
-        items.sort((a, b) => a.name.localeCompare(b.name));
-    } else if (sort === 'za') {
-        items.sort((a, b) => b.name.localeCompare(a.name));
-    } else if (sort === 'lohi') {
-        items.sort((a, b) => a.price - b.price);
-    } else if (sort === 'hilo') {
-        items.sort((a, b) => b.price - a.price);
+// Inventory – with sorting + problem/visual user image glitches
+app.get('/api/inventory', async (req, res) => {
+    const session = getSessionFromRequest(req);
+
+    // Performance delay on inventory load
+    if (session?.type === 'performance') {
+        await new Promise(r => setTimeout(r, 3000));
     }
+
+    let items = inventory.map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.desc,
+        price: p.price,
+        imageUrl: `https://www.saucedemo.com/img/${p.img}`,
+    }));
+
+    // problem_user & visual_user get broken/wrong images
+    if (session?.type === 'problem' || session?.type === 'visual') {
+        items = items.map((item, i) => ({
+            ...item,
+            imageUrl: 'https://www.saucedemo.com/img/problem-user.jpg', // or random dog pics
+        }));
+    }
+
+    const { sort } = req.query;
+    if (sort === 'az') items.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === 'za') items.sort((a, b) => b.name.localeCompare(a.name));
+    if (sort === 'lohi') items.sort((a, b) => a.price - b.price);
+    if (sort === 'hilo') items.sort((a, b) => b.price - a.price);
 
     res.json(items);
 });
 
-// Single inventory item
 app.get('/api/inventory/:id', (req, res) => {
     const id = Number(req.params.id);
-    const product = inventory.find((p) => p.id === id);
-    if (!product) {
-        return res.status(404).json({ error: 'Product not found' });
-    }
-    res.json(product);
+    const product = inventory.find(p => p.id === id);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+
+    res.json({
+        id: product.id,
+        name: product.name,
+        description: product.desc,
+        price: product.price,
+        imageUrl: `https://www.saucedemo.com/img/${product.img}`,
+    });
 });
 
-// Get cart
+// Cart
 app.get('/api/cart', requireAuth, (req, res) => {
-    const { cart } = req.session;
-    const details = calculateCartDetails(cart);
+    const details = calculateCartDetails(req.session.cart);
     res.json(details);
 });
 
-// Add to cart
 app.post('/api/cart', requireAuth, (req, res) => {
-    const { productId, quantity } = req.body || {};
+    const { productId, quantity = 1 } = req.body || {};
     const id = Number(productId);
-    const qty = quantity ? Number(quantity) : 1;
+    const qty = Number(quantity);
 
-    if (Number.isNaN(id) || Number.isNaN(qty) || qty <= 0) {
+    if (isNaN(id) || isNaN(qty) || qty <= 0) {
         return res.status(400).json({ error: 'Invalid productId or quantity' });
     }
 
-    const product = inventory.find((p) => p.id === id);
-    if (!product) {
+    if (!inventory.some(p => p.id === id)) {
         return res.status(404).json({ error: 'Product not found' });
     }
 
-    const existing = req.session.cart.find((item) => item.productId === id);
+    const existing = req.session.cart.find(i => i.productId === id);
     if (existing) {
         existing.quantity += qty;
     } else {
         req.session.cart.push({ productId: id, quantity: qty });
     }
 
-    const details = calculateCartDetails(req.session.cart);
-    res.status(201).json(details);
+    res.status(201).json(calculateCartDetails(req.session.cart));
 });
 
-// Remove from cart
+// Remove from cart – now correctly removes only 1 item (like real SauceDemo)
 app.delete('/api/cart/:productId', requireAuth, (req, res) => {
-  const id = Number(req.params.productId);
+    const id = Number(req.params.productId);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid productId' });
 
-  // Validate ID
-  if (Number.isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid productId' });
-  }
+    const index = req.session.cart.findIndex(i => i.productId === id);
+    if (index === -1) return res.status(404).json({ error: 'Item not in cart' });
 
-  // Check if product exists in inventory
-  const product = inventory.find((p) => p.id === id);
-  if (!product) {
-    return res.status(404).json({ error: 'Product not found' });
-  }
+    if (req.session.cart[index].quantity > 1) {
+        req.session.cart[index].quantity -= 1;
+    } else {
+        req.session.cart.splice(index, 1);
+    }
 
-  const cart = req.session.cart;
-
-  const index = cart.findIndex((item) => item.productId === id);
-
-  if (index === -1) {
-    // Not in cart
-    return res.status(404).json({ error: 'Product not in cart' });
-  }
-
-  // Remove 1 item completely (just like remove button)
-  cart.splice(index, 1);
-
-  const details = calculateCartDetails(cart);
-
-  return res.status(200).json({
-    message: 'Item removed from cart',
-    ...details
-  });
+    res.json({
+        message: 'Item removed from cart',
+        ...calculateCartDetails(req.session.cart)
+    });
 });
 
-
-// Reset app state (similar to "Reset App State" in burger menu)
+// Reset app state
 app.post('/api/reset', requireAuth, (req, res) => {
     req.session.cart = [];
     req.session.lastCheckout = null;
-    res.json({ message: 'App state reset for this user' });
+    res.json({ message: 'App state reset' });
 });
 
 // Checkout
 app.post('/api/checkout', requireAuth, (req, res) => {
     const { firstName, lastName, postalCode } = req.body || {};
     if (!firstName || !lastName || !postalCode) {
-        return res.status(400).json({ error: 'firstName, lastName and postalCode are required' });
+        return res.status(400).json({ error: 'All customer fields required' });
     }
 
-    if (!req.session.cart || req.session.cart.length === 0) {
-        return res.status(400).json({ error: 'Cannot checkout with an empty cart' });
+    if (req.session.cart.length === 0) {
+        return res.status(400).json({ error: 'Cart is empty' });
     }
 
     const details = calculateCartDetails(req.session.cart);
-    const orderId = 'ORDER-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+    const orderId = 'ORDER-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     const summary = {
         orderId,
         customer: { firstName, lastName, postalCode },
         ...details,
+        message: 'Thank you for your order!',
+        complete: true
     };
 
-    // Clear cart after checkout, like real app
     req.session.lastCheckout = summary;
     req.session.cart = [];
 
     res.status(201).json(summary);
 });
 
-// Catch-all 404 for unknown API routes
+// 404 for unknown API routes
 app.use('/api', (req, res) => {
-    res.status(404).json({ error: 'API route not found' });
+    res.status(404).json({ error: 'Route not found' });
 });
 
-// Start server
+// Start
 app.listen(PORT, () => {
-    console.log(`SauceDemo-like API listening on http://localhost:${PORT}`);
+    console.log(`SauceDemo API Mock (Perfect Clone) running on http://localhost:${PORT}`);
+    console.log(`Try logging in with: standard_user / secret_sauce`);
 });
